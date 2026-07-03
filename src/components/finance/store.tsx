@@ -25,6 +25,7 @@ interface Store {
   loading: boolean;
   error: string | null;
   addOperation: (op: Omit<Operation, 'id'>) => Promise<void>;
+  updateOperation: (op: Operation) => Promise<void>;
   removeOperation: (id: number) => Promise<void>;
   startBalance: number;
   setStartBalance: (n: number) => void;
@@ -73,6 +74,22 @@ export const FinanceProvider = ({ children }: { children: ReactNode }) => {
     setOperations((prev) => [...prev, saved]);
   };
 
+  const updateOperation = async (op: Operation) => {
+    const prev = operations;
+    setOperations((p) => p.map((o) => (o.id === op.id ? op : o)));
+    try {
+      const res = await fetch(OPERATIONS_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(op),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      setOperations(prev);
+      throw new Error('Не удалось обновить операцию');
+    }
+  };
+
   const removeOperation = async (id: number) => {
     const prev = operations;
     setOperations((p) => p.filter((o) => o.id !== id));
@@ -95,7 +112,7 @@ export const FinanceProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <Ctx.Provider value={{ operations, loading, error, addOperation, removeOperation, startBalance, setStartBalance }}>
+    <Ctx.Provider value={{ operations, loading, error, addOperation, updateOperation, removeOperation, startBalance, setStartBalance }}>
       {children}
     </Ctx.Provider>
   );

@@ -11,6 +11,8 @@ import Traffic from '@/components/finance/Traffic';
 import { Period, periodLabels, buildPnL, forecast } from '@/components/finance/data';
 import { PnLPoint } from '@/components/finance/PnLChart';
 import { useFinance, formatMoney, Operation } from '@/components/finance/store';
+import { useAnalyticsCtx, monthNames } from '@/components/finance/AnalyticsContext';
+import EditableCell from '@/components/finance/EditableCell';
 
 interface ViewProps {
   period: Period;
@@ -159,29 +161,92 @@ const Metric = ({ label, value, delta, positive, icon }: { label: string; value:
 );
 
 /* ---------- Dashboard ---------- */
-const Dashboard = ({ period, setPeriod, data, totalIncome, totalExpense, profit, margin }: ViewProps) => (
-  <div className="space-y-6">
-    <div className="flex items-center justify-between flex-wrap gap-3">
-      <PeriodTabs period={period} setPeriod={setPeriod} />
-      <AddOperation trigger={<Button variant="outline" size="sm" className="gap-2"><Icon name="Plus" size={16} /> Внести данные</Button>} />
-    </div>
+const Dashboard = ({ period, setPeriod, data, totalIncome, totalExpense, profit, margin }: ViewProps) => {
+  const { data: analytics, updatePnL } = useAnalyticsCtx();
+  const currentMonth = new Date().getMonth() + 1;
 
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <Metric label="Выручка" value={`${formatMoney(totalIncome)} ₽`} delta="+12.4%" positive icon="Wallet" />
-      <Metric label="Расходы" value={`${formatMoney(totalExpense)} ₽`} delta="+4.1%" icon="Receipt" />
-      <Metric label="Прибыль" value={`${formatMoney(profit)} ₽`} delta="+18.2%" positive icon="PiggyBank" />
-      <Metric label="Маржа" value={`${margin}%`} delta="+2.3 п.п." positive icon="Percent" />
-    </div>
+  const findRow = (key: string) => analytics?.pnl.find((r) => r.key === key && r.month === currentMonth);
+  const revenueRow = findRow('revenue');
+  const costsRow = findRow('total_costs_with_tax');
+  const profitRow = findRow('net_profit');
 
-    <div className="rounded-2xl border border-border bg-card p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="font-semibold tracking-tight">Доходы и расходы</h2>
-        <span className="text-xs text-muted-foreground">₽, тыс.</span>
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <PeriodTabs period={period} setPeriod={setPeriod} />
+        <AddOperation trigger={<Button variant="outline" size="sm" className="gap-2"><Icon name="Plus" size={16} /> Внести данные</Button>} />
       </div>
-      {data.length ? <PnLChart data={data} /> : <Empty />}
-    </div>
 
-    <ForecastCard />
+      {analytics && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <EditableMetric
+            label={`Выручка · ${monthNames[currentMonth - 1]}`}
+            icon="Wallet"
+            value={revenueRow?.fact ?? null}
+            positive
+            onSave={(v) => updatePnL(currentMonth, 'revenue', 'fact', v)}
+          />
+          <EditableMetric
+            label={`Расходы · ${monthNames[currentMonth - 1]}`}
+            icon="Receipt"
+            value={costsRow?.fact ?? null}
+            onSave={(v) => updatePnL(currentMonth, 'total_costs_with_tax', 'fact', v)}
+          />
+          <EditableMetric
+            label={`Прибыль · ${monthNames[currentMonth - 1]}`}
+            icon="PiggyBank"
+            value={profitRow?.fact ?? null}
+            positive={(profitRow?.fact ?? 0) >= 0}
+            onSave={(v) => updatePnL(currentMonth, 'net_profit', 'fact', v)}
+          />
+          <Metric
+            label="Маржа за всё время"
+            value={`${margin}%`}
+            delta={Number(margin) >= 0 ? 'по операциям' : 'по операциям'}
+            positive={Number(margin) >= 0}
+            icon="Percent"
+          />
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-border bg-card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold tracking-tight">Доходы и расходы по операциям</h2>
+          <span className="text-xs text-muted-foreground">₽, тыс.</span>
+        </div>
+        {data.length ? <PnLChart data={data} /> : <Empty />}
+      </div>
+
+      <ForecastCard />
+    </div>
+  );
+};
+
+const EditableMetric = ({
+  label,
+  value,
+  icon,
+  positive,
+  onSave,
+}: {
+  label: string;
+  value: number | null;
+  icon: string;
+  positive?: boolean;
+  onSave: (v: number | null) => Promise<void>;
+}) => (
+  <div className="rounded-2xl border border-border bg-card p-5">
+    <div className="flex items-center justify-between mb-3">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <Icon name={icon} size={18} className="text-muted-foreground" />
+    </div>
+    <EditableCell
+      value={value}
+      suffix=" ₽"
+      className={`text-2xl font-semibold tracking-tight !px-0 !py-0 !text-left ${positive ? '' : 'text-expense'}`}
+      onSave={onSave}
+    />
+    <div className="text-xs text-muted-foreground mt-1.5">Нажмите, чтобы изменить</div>
   </div>
 );
 
@@ -221,7 +286,7 @@ const ForecastCard = () => {
 
 /* ---------- P&L report ---------- */
 const PnL = ({ period, setPeriod, data, profit, margin, totalIncome, totalExpense }: ViewProps) => {
-  const { operations, removeOperation } = useFinance();
+  const { operations, removeOperation, updateOperation } = useFinance();
   const sorted = [...operations].sort((a, b) => b.date.localeCompare(a.date));
 
   return (
@@ -255,9 +320,13 @@ const PnL = ({ period, setPeriod, data, profit, margin, totalIncome, totalExpens
                     {t.category} · {new Date(t.date).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })}
                   </div>
                 </div>
-                <div className={`text-sm font-mono tnum font-medium ${t.type === 'income' ? 'text-income' : 'text-foreground'}`}>
-                  {t.type === 'income' ? '+' : '−'}
-                  {formatMoney(t.amount)} ₽
+                <div className={`text-sm font-mono tnum font-medium w-28 ${t.type === 'income' ? 'text-income' : 'text-foreground'}`}>
+                  <EditableCell
+                    value={t.amount}
+                    suffix=" ₽"
+                    className={t.type === 'income' ? 'text-income' : 'text-foreground'}
+                    onSave={(v) => updateOperation({ ...t, amount: v ?? t.amount })}
+                  />
                 </div>
                 <button
                   onClick={() => {

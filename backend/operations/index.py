@@ -14,7 +14,7 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
 
     headers = {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, X-User-Id, X-Auth-Token, X-Session-Id',
         'Access-Control-Max-Age': '86400',
         'Content-Type': 'application/json',
@@ -77,6 +77,48 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
         cur.close()
         conn.close()
         return {'statusCode': 201, 'headers': headers, 'body': json.dumps(result)}
+
+    if method == 'PUT':
+        body = json.loads(event.get('body') or '{}')
+        op_id = body.get('id')
+        if not op_id:
+            cur.close()
+            conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Не указан id операции'})}
+
+        date = str(body.get('date', '')).replace("'", "''")
+        name = str(body.get('name', '')).replace("'", "''")
+        category = str(body.get('category', '')).replace("'", "''")
+        op_type = str(body.get('type', '')).replace("'", "''")
+        amount = float(body.get('amount', 0))
+
+        if op_type not in ('income', 'expense') or not name or amount <= 0:
+            cur.close()
+            conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректные данные операции'})}
+
+        cur.execute(
+            f"UPDATE operations SET op_date = '{date}', name = '{name}', category = '{category}', "
+            f"op_type = '{op_type}', amount = {amount} WHERE id = {int(op_id)} "
+            f"RETURNING id, op_date, name, category, op_type, amount"
+        )
+        row = cur.fetchone()
+        conn.commit()
+        if not row:
+            cur.close()
+            conn.close()
+            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Операция не найдена'})}
+        result = {
+            'id': row[0],
+            'date': row[1].isoformat(),
+            'name': row[2],
+            'category': row[3],
+            'type': row[4],
+            'amount': float(row[5]),
+        }
+        cur.close()
+        conn.close()
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps(result)}
 
     if method == 'DELETE':
         params = event.get('queryStringParameters') or {}

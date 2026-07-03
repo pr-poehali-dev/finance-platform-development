@@ -1,9 +1,10 @@
 import { Operation } from './store';
 import { PnLPoint } from './PnLChart';
 
-export type Period = 'month' | 'quarter' | 'year';
+export type Period = 'day' | 'month' | 'quarter' | 'year';
 
 export const periodLabels: Record<Period, string> = {
+  day: 'День',
   month: 'Месяц',
   quarter: 'Квартал',
   year: 'Год',
@@ -19,7 +20,10 @@ export function buildPnL(ops: Operation[], period: Period): PnLPoint[] {
     const d = new Date(o.date);
     let key = '';
     let order = 0;
-    if (period === 'month') {
+    if (period === 'day') {
+      key = d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' });
+      order = d.getTime();
+    } else if (period === 'month') {
       const week = Math.ceil(d.getDate() / 7);
       key = `${week} нед`;
       order = d.getMonth() * 5 + week;

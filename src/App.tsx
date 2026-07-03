@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import { FinanceProvider } from "./components/finance/store";
+import { AnalyticsProvider } from "./components/finance/AnalyticsContext";
 
 const queryClient = new QueryClient();
 
@@ -14,6 +15,7 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <FinanceProvider>
+      <AnalyticsProvider>
       <Toaster />
       <Sonner />
       <BrowserRouter>
@@ -23,6 +25,7 @@ const App = () => (
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
+      </AnalyticsProvider>
       </FinanceProvider>
     </TooltipProvider>
   </QueryClientProvider>

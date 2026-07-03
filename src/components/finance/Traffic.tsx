@@ -1,16 +1,14 @@
 import Icon from '@/components/ui/icon';
+import EditableCell from './EditableCell';
 import { formatMoney } from './store';
-import { useAnalytics, monthNames, MarketingRow, TrafficRow } from './useAnalytics';
+import { useAnalyticsCtx, monthNames } from './AnalyticsContext';
 
-const FUNNEL_KEYS = ['leads', 'consultations'];
 const CONV_KEYS = ['conv_lead_to_consult', 'conv_lead_to_pay', 'conv_consult_to_pay'];
-const COST_KEYS = ['lead_cost', 'contract_cost'];
-
-const groupByKey = (rows: TrafficRow[], key: string) =>
-  rows.filter((r) => r.key === key && r.month).sort((a, b) => (a.month as number) - (b.month as number));
+const CONTRACT_KEYS = ['contracts_bfl', 'contracts_vbfl', 'contracts_rd'];
+const QUALITY_KEYS = ['missed_call_pct', 'low_quality_pct'];
 
 const Traffic = () => {
-  const { data, loading, error } = useAnalytics(2026);
+  const { data, loading, error, updateTraffic } = useAnalyticsCtx();
 
   if (loading) {
     return (
@@ -29,17 +27,28 @@ const Traffic = () => {
     );
   }
 
-  const leads = groupByKey(data.traffic, 'leads');
-  const consultations = groupByKey(data.traffic, 'consultations');
+  const groupByKey = (key: string) =>
+    data.traffic.filter((r) => r.key === key && r.month).sort((a, b) => (a.month as number) - (b.month as number));
+
+  const leads = groupByKey('leads');
+  const consultations = groupByKey('consultations');
   const maxLeads = Math.max(...leads.map((r) => r.fact ?? 0), 1);
 
   const totalLeads = leads.reduce((a, r) => a + (r.fact ?? 0), 0);
   const totalConsult = consultations.reduce((a, r) => a + (r.fact ?? 0), 0);
+  const totalContracts = CONTRACT_KEYS.reduce((sum, k) => sum + groupByKey(k).reduce((a, r) => a + (r.fact ?? 0), 0), 0);
 
-  // last available payments count approximation via conversion rows isn't reliable — use last month deal count from conv_consult_to_pay*consult
-  const convRows = data.traffic.filter((r) => CONV_KEYS.includes(r.key) && r.month);
+  const monthsForConv = [...new Set(data.traffic.filter((r) => CONV_KEYS.includes(r.key) && r.month).map((r) => r.month as number))].sort(
+    (a, b) => a - b
+  );
+  const monthsForContracts = [...new Set(data.traffic.filter((r) => CONTRACT_KEYS.includes(r.key) && r.month).map((r) => r.month as number))].sort(
+    (a, b) => a - b
+  );
+  const monthsForQuality = [...new Set(data.traffic.filter((r) => QUALITY_KEYS.includes(r.key) && r.month).map((r) => r.month as number))].sort(
+    (a, b) => a - b
+  );
 
-  const sourcesBySource = new Map<string, MarketingRow[]>();
+  const sourcesBySource = new Map<string, typeof data.marketing>();
   for (const r of data.marketing) {
     const arr = sourcesBySource.get(r.source) ?? [];
     arr.push(r);
@@ -48,11 +57,15 @@ const Traffic = () => {
   const sourceTotals = [...sourcesBySource.entries()].map(([source, rows]) => ({
     source,
     fact: rows.reduce((a, r) => a + (r.fact ?? 0), 0),
-    plan: rows.reduce((a, r) => a + (r.plan ?? 0), 0),
   }));
   const maxSource = Math.max(...sourceTotals.map((s) => s.fact), 1);
 
-  const costRows = (key: string) => groupByKey(data.traffic, key);
+  const avgOf = (key: string) => {
+    const rows = groupByKey(key);
+    const vals = rows.map((r) => r.fact).filter((v): v is number => v !== null && v !== undefined && v > 0);
+    if (!vals.length) return 0;
+    return Math.round(vals.reduce((a, v) => a + v, 0) / vals.length);
+  };
 
   return (
     <div className="space-y-6">
@@ -60,16 +73,8 @@ const Traffic = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon="Users" label="Лидов всего" value={totalLeads.toLocaleString('ru-RU')} />
         <StatCard icon="MessageSquare" label="Консультаций" value={totalConsult.toLocaleString('ru-RU')} />
-        <StatCard
-          icon="Percent"
-          label="Лид → консультация"
-          value={`${totalLeads ? Math.round((totalConsult / totalLeads) * 100) : 0}%`}
-        />
-        <StatCard
-          icon="Target"
-          label="Ср. стоимость лида"
-          value={`${formatMoney(avgOf(costRows('lead_cost')))} ₽`}
-        />
+        <StatCard icon="FileCheck2" label="Заключено договоров" value={totalContracts.toLocaleString('ru-RU')} />
+        <StatCard icon="Target" label="Ср. стоимость лида" value={`${formatMoney(avgOf('lead_cost'))} ₽`} />
       </div>
 
       {/* Leads chart */}
@@ -106,45 +111,34 @@ const Traffic = () => {
         </div>
       </div>
 
+      {/* Editable metrics table: leads, consultations, quality */}
+      <EditTable
+        title="Лиды, консультации и качество трафика"
+        months={leads.map((r) => r.month as number)}
+        rows={['leads', 'consultations', ...QUALITY_KEYS]}
+        data={data.traffic}
+        onEdit={updateTraffic}
+        suffixFor={(key) => (QUALITY_KEYS.includes(key) ? '%' : '')}
+      />
+
+      {/* Contracts by type */}
+      <EditTable
+        title="Заключённые договоры по типам"
+        months={monthsForContracts}
+        rows={CONTRACT_KEYS}
+        data={data.traffic}
+        onEdit={updateTraffic}
+      />
+
       {/* Conversion table */}
-      <div className="rounded-2xl border border-border bg-card overflow-hidden">
-        <div className="px-5 py-4 border-b border-border">
-          <h2 className="font-semibold tracking-tight">Воронка конверсий</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[640px]">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left px-5 py-2.5 font-medium text-muted-foreground">Этап</th>
-                {monthNames.slice(0, 6).map((m) => (
-                  <th key={m} className="text-right px-3 py-2.5 font-medium text-muted-foreground">
-                    {m}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {CONV_KEYS.map((key) => {
-                const rows = convRows.filter((r) => r.key === key);
-                if (!rows.length) return null;
-                return (
-                  <tr key={key} className="border-b border-border/60">
-                    <td className="px-5 py-2.5">{rows[0].label}</td>
-                    {Array.from({ length: 6 }, (_, i) => i + 1).map((m) => {
-                      const r = rows.find((x) => x.month === m);
-                      return (
-                        <td key={m} className="text-right px-3 py-2.5 font-mono tnum">
-                          {r?.fact !== undefined && r?.fact !== null ? `${r.fact}%` : '—'}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <EditTable
+        title="Воронка конверсий"
+        months={monthsForConv}
+        rows={CONV_KEYS}
+        data={data.traffic}
+        onEdit={updateTraffic}
+        suffixFor={() => '%'}
+      />
 
       {/* Marketing sources */}
       <div className="rounded-2xl border border-border bg-card p-6">
@@ -168,11 +162,64 @@ const Traffic = () => {
   );
 };
 
-function avgOf(rows: TrafficRow[]): number {
-  const vals = rows.map((r) => r.fact).filter((v): v is number => v !== null && v !== undefined);
-  if (!vals.length) return 0;
-  return Math.round(vals.reduce((a, v) => a + v, 0) / vals.length);
+interface EditTableProps {
+  title: string;
+  months: number[];
+  rows: string[];
+  data: { month: number | null; key: string; label: string; plan: number | null; fact: number | null }[];
+  onEdit: (month: number | null, key: string, field: 'plan' | 'fact', value: number | null) => Promise<void>;
+  suffixFor?: (key: string) => string;
 }
+
+const EditTable = ({ title, months, rows, data, onEdit, suffixFor }: EditTableProps) => {
+  if (!months.length) return null;
+  return (
+    <div className="rounded-2xl border border-border bg-card overflow-hidden">
+      <div className="px-5 py-4 border-b border-border">
+        <h2 className="font-semibold tracking-tight">{title}</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">Нажмите на цифру, чтобы отредактировать</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[640px]">
+          <thead>
+            <tr className="border-b border-border">
+              <th className="text-left px-5 py-2.5 font-medium text-muted-foreground sticky left-0 bg-card">Показатель</th>
+              {months.map((m) => (
+                <th key={m} className="text-right px-2.5 py-2.5 font-medium text-muted-foreground whitespace-nowrap">
+                  {monthNames[m - 1]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((key) => {
+              const rowData = data.filter((r) => r.key === key);
+              if (!rowData.length) return null;
+              const label = rowData[0].label;
+              return (
+                <tr key={key} className="border-b border-border/60 hover:bg-secondary/20">
+                  <td className="px-5 py-2 sticky left-0 bg-inherit whitespace-nowrap">{label}</td>
+                  {months.map((m) => {
+                    const r = rowData.find((x) => x.month === m);
+                    return (
+                      <td key={m} className="px-1 py-1.5 min-w-[80px]">
+                        <EditableCell
+                          value={r?.fact ?? null}
+                          suffix={suffixFor?.(key) ?? ''}
+                          onSave={(v) => onEdit(m, key, 'fact', v)}
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
 
 const StatCard = ({ icon, label, value }: { icon: string; label: string; value: string }) => (
   <div className="rounded-2xl border border-border bg-card p-5">
