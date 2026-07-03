@@ -19,12 +19,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
-import { useFinance, categories, OpType } from './store';
+import { useFinance, categories, OpType, OpStatus } from './store';
 
 const AddOperation = ({ trigger }: { trigger?: React.ReactNode }) => {
   const { addOperation } = useFinance();
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<OpType>('income');
+  const [status, setStatus] = useState<OpStatus>('actual');
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState(categories[0]);
@@ -36,6 +37,7 @@ const AddOperation = ({ trigger }: { trigger?: React.ReactNode }) => {
     setCategory(categories[0]);
     setDate(new Date().toISOString().slice(0, 10));
     setType('income');
+    setStatus('actual');
   };
 
   const [saving, setSaving] = useState(false);
@@ -48,7 +50,7 @@ const AddOperation = ({ trigger }: { trigger?: React.ReactNode }) => {
     }
     setSaving(true);
     try {
-      await addOperation({ name: name.trim(), amount: value, category, date, type });
+      await addOperation({ name: name.trim(), amount: value, category, date, type, status });
       toast({ title: 'Операция добавлена', description: `${name} · ${value.toLocaleString('ru-RU')} ₽` });
       reset();
       setOpen(false);
@@ -87,6 +89,20 @@ const AddOperation = ({ trigger }: { trigger?: React.ReactNode }) => {
               }`}
             >
               {t === 'income' ? 'Доход' : 'Расход'}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 p-1 rounded-lg bg-secondary">
+          {(['actual', 'planned'] as OpStatus[]).map((s) => (
+            <button
+              key={s}
+              onClick={() => setStatus(s)}
+              className={`py-2 rounded-md text-sm font-medium transition-colors ${
+                status === s ? 'bg-card shadow-sm' : 'text-muted-foreground'
+              }`}
+            >
+              {s === 'actual' ? 'Факт' : 'План'}
             </button>
           ))}
         </div>

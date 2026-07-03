@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import EditableCell from './EditableCell';
+import EditableLabel from './EditableLabel';
 import { formatMoney } from './store';
 import { useAnalyticsCtx, monthNames } from './AnalyticsContext';
 
@@ -8,7 +10,8 @@ const CONTRACT_KEYS = ['contracts_bfl', 'contracts_vbfl', 'contracts_rd'];
 const QUALITY_KEYS = ['missed_call_pct', 'low_quality_pct'];
 
 const Traffic = () => {
-  const { data, loading, error, updateTraffic } = useAnalyticsCtx();
+  const { data, loading, error, updateTraffic, renameTrafficRow, renameMarketingSource } = useAnalyticsCtx();
+  const [sourceFilter, setSourceFilter] = useState<string>('all');
 
   if (loading) {
     return (
@@ -42,9 +45,6 @@ const Traffic = () => {
     (a, b) => a - b
   );
   const monthsForContracts = [...new Set(data.traffic.filter((r) => CONTRACT_KEYS.includes(r.key) && r.month).map((r) => r.month as number))].sort(
-    (a, b) => a - b
-  );
-  const monthsForQuality = [...new Set(data.traffic.filter((r) => QUALITY_KEYS.includes(r.key) && r.month).map((r) => r.month as number))].sort(
     (a, b) => a - b
   );
 
@@ -118,6 +118,7 @@ const Traffic = () => {
         rows={['leads', 'consultations', ...QUALITY_KEYS]}
         data={data.traffic}
         onEdit={updateTraffic}
+        onRename={renameTrafficRow}
         suffixFor={(key) => (QUALITY_KEYS.includes(key) ? '%' : '')}
       />
 
@@ -128,6 +129,7 @@ const Traffic = () => {
         rows={CONTRACT_KEYS}
         data={data.traffic}
         onEdit={updateTraffic}
+        onRename={renameTrafficRow}
       />
 
       {/* Conversion table */}
@@ -137,26 +139,77 @@ const Traffic = () => {
         rows={CONV_KEYS}
         data={data.traffic}
         onEdit={updateTraffic}
+        onRename={renameTrafficRow}
         suffixFor={() => '%'}
       />
 
       {/* Marketing sources */}
       <div className="rounded-2xl border border-border bg-card p-6">
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
           <h2 className="font-semibold tracking-tight">Источники маркетинга</h2>
-          <span className="text-xs text-muted-foreground">факт затрат, ₽</span>
+          <select
+            value={sourceFilter}
+            onChange={(e) => setSourceFilter(e.target.value)}
+            className="text-sm rounded-lg border border-border bg-secondary px-3 py-1.5 outline-none"
+          >
+            <option value="all">Все источники</option>
+            {sourceTotals.map((s) => (
+              <option key={s.source} value={s.source}>
+                {s.source}
+              </option>
+            ))}
+          </select>
         </div>
-        <div className="space-y-3">
-          {sourceTotals.map((s) => (
-            <div key={s.source} className="flex items-center gap-3">
-              <span className="w-32 text-sm text-muted-foreground truncate">{s.source}</span>
-              <div className="flex-1 h-2.5 rounded-full bg-secondary overflow-hidden">
-                <div className="h-full rounded-full bg-accent" style={{ width: `${(s.fact / maxSource) * 100}%` }} />
+
+        {sourceFilter === 'all' ? (
+          <div className="space-y-3">
+            {sourceTotals.map((s) => (
+              <div key={s.source} className="flex items-center gap-3">
+                <EditableLabel
+                  value={s.source}
+                  className="w-32 text-sm text-muted-foreground truncate"
+                  onSave={(v) => renameMarketingSource(s.source, v)}
+                />
+                <div className="flex-1 h-2.5 rounded-full bg-secondary overflow-hidden">
+                  <div className="h-full rounded-full bg-accent" style={{ width: `${(s.fact / maxSource) * 100}%` }} />
+                </div>
+                <span className="w-28 text-right text-sm font-mono tnum">{formatMoney(s.fact)} ₽</span>
               </div>
-              <span className="w-28 text-right text-sm font-mono tnum">{formatMoney(s.fact)} ₽</span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[520px]">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted-foreground uppercase tracking-wide">
+                  <th className="text-left px-3 py-2 font-medium">Месяц</th>
+                  <th className="text-right px-3 py-2 font-medium">План, ₽</th>
+                  <th className="text-right px-3 py-2 font-medium">Факт, ₽</th>
+                  <th className="text-right px-3 py-2 font-medium">Отклонение</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(sourcesBySource.get(sourceFilter) ?? [])
+                  .filter((r) => r.month)
+                  .sort((a, b) => (a.month as number) - (b.month as number))
+                  .map((r) => {
+                    const diff = (r.fact ?? 0) - (r.plan ?? 0);
+                    return (
+                      <tr key={r.month} className="hover:bg-secondary/30">
+                        <td className="px-3 py-2 font-medium">{monthNames[(r.month as number) - 1]}</td>
+                        <td className="text-right px-3 py-2 font-mono tnum text-muted-foreground">{formatMoney(r.plan ?? 0)}</td>
+                        <td className="text-right px-3 py-2 font-mono tnum">{formatMoney(r.fact ?? 0)}</td>
+                        <td className={`text-right px-3 py-2 font-mono tnum ${diff >= 0 ? 'text-expense' : 'text-income'}`}>
+                          {diff >= 0 ? '+' : ''}
+                          {formatMoney(diff)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -168,16 +221,17 @@ interface EditTableProps {
   rows: string[];
   data: { month: number | null; key: string; label: string; plan: number | null; fact: number | null }[];
   onEdit: (month: number | null, key: string, field: 'plan' | 'fact', value: number | null) => Promise<void>;
+  onRename?: (key: string, label: string) => Promise<void>;
   suffixFor?: (key: string) => string;
 }
 
-const EditTable = ({ title, months, rows, data, onEdit, suffixFor }: EditTableProps) => {
+const EditTable = ({ title, months, rows, data, onEdit, onRename, suffixFor }: EditTableProps) => {
   if (!months.length) return null;
   return (
     <div className="rounded-2xl border border-border bg-card overflow-hidden">
       <div className="px-5 py-4 border-b border-border">
         <h2 className="font-semibold tracking-tight">{title}</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">Нажмите на цифру, чтобы отредактировать</p>
+        <p className="text-xs text-muted-foreground mt-0.5">Нажмите на цифру или название, чтобы отредактировать</p>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm min-w-[640px]">
@@ -198,7 +252,13 @@ const EditTable = ({ title, months, rows, data, onEdit, suffixFor }: EditTablePr
               const label = rowData[0].label;
               return (
                 <tr key={key} className="border-b border-border/60 hover:bg-secondary/20">
-                  <td className="px-5 py-2 sticky left-0 bg-inherit whitespace-nowrap">{label}</td>
+                  <td className="px-5 py-2 sticky left-0 bg-inherit whitespace-nowrap">
+                    {onRename ? (
+                      <EditableLabel value={label} onSave={(v) => onRename(key, v)} className="text-sm" />
+                    ) : (
+                      label
+                    )}
+                  </td>
                   {months.map((m) => {
                     const r = rowData.find((x) => x.month === m);
                     return (

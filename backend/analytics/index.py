@@ -35,15 +35,52 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
         field = body.get('field')
         value = body.get('value')
 
-        if table not in ('pnl', 'traffic') or field not in ('plan', 'fact') or not row_key:
+        if table == 'marketing' and field == 'label':
+            old_source = row_key
+            new_source = str(value or '').replace("'", "''")
+            if not old_source or not new_source:
+                cur.close()
+                conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректное название источника'})}
+            cur.execute(
+                f"UPDATE marketing_sources_monthly SET source_name = '{new_source}' "
+                f"WHERE year = {year} AND source_name = '{old_source}'"
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
+
+        if table not in ('pnl', 'traffic') or not row_key:
             cur.close()
             conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректные параметры обновления'})}
 
-        column = 'plan_amount' if field == 'plan' else 'fact_amount'
         table_name = 'pnl_monthly' if table == 'pnl' else 'traffic_monthly'
         key_column = 'row_key' if table == 'pnl' else 'metric_key'
+        label_column = 'row_label' if table == 'pnl' else 'metric_label'
 
+        if field == 'label':
+            new_label = str(value or '').replace("'", "''")
+            if not new_label:
+                cur.close()
+                conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Название не может быть пустым'})}
+            cur.execute(
+                f"UPDATE {table_name} SET {label_column} = '{new_label}' "
+                f"WHERE year = {year} AND {key_column} = '{row_key}'"
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
+
+        if field not in ('plan', 'fact'):
+            cur.close()
+            conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректное поле обновления'})}
+
+        column = 'plan_amount' if field == 'plan' else 'fact_amount'
         if table == 'traffic':
             column = 'plan_value' if field == 'plan' else 'fact_value'
 
@@ -62,6 +99,38 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
         if not row:
             return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Показатель не найден'})}
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
+
+    if method == 'POST':
+        body = json.loads(event.get('body') or '{}')
+        table = body.get('table')
+        year = int(body.get('year', 2026))
+        row_key = str(body.get('key', '')).replace("'", "''")
+        label = str(body.get('label', '')).replace("'", "''")
+        section = str(body.get('section', 'custom')).replace("'", "''")
+
+        if table not in ('pnl', 'traffic') or not row_key or not label:
+            cur.close()
+            conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректные параметры новой строки'})}
+
+        if table == 'pnl':
+            for m in range(1, 13):
+                cur.execute(
+                    f"INSERT INTO pnl_monthly (year, month, row_key, row_label, section, plan_amount, fact_amount) "
+                    f"VALUES ({year}, {m}, '{row_key}', '{label}', '{section}', NULL, NULL) "
+                    f"ON CONFLICT (year, month, row_key) DO NOTHING"
+                )
+        else:
+            for m in range(1, 13):
+                cur.execute(
+                    f"INSERT INTO traffic_monthly (year, month, metric_key, metric_label, unit, plan_value, fact_value) "
+                    f"VALUES ({year}, {m}, '{row_key}', '{label}', 'count', NULL, NULL) "
+                    f"ON CONFLICT (year, month, metric_key) DO NOTHING"
+                )
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {'statusCode': 201, 'headers': headers, 'body': json.dumps({'ok': True, 'key': row_key})}
 
     if method != 'GET':
         cur.close()

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import Icon from '@/components/ui/icon';
 import EditableCell from './EditableCell';
+import EditableLabel from './EditableLabel';
 import { useAnalyticsCtx, monthNames } from './AnalyticsContext';
 
 interface SectionDef {
@@ -41,8 +42,9 @@ const SECTIONS: SectionDef[] = [
 ];
 
 const AnnualPnL = () => {
-  const { data, loading, error, updatePnL } = useAnalyticsCtx();
+  const { data, loading, error, updatePnL, renamePnLRow } = useAnalyticsCtx();
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['revenue', 'summary']));
+  const [monthFilter, setMonthFilter] = useState<number | 'all'>('all');
 
   if (loading) {
     return (
@@ -68,7 +70,8 @@ const AnnualPnL = () => {
     byKey.set(r.key, arr);
   }
 
-  const monthsWithData = [...new Set(data.pnl.filter((r) => r.month).map((r) => r.month as number))].sort((a, b) => a - b);
+  const allMonths = [...new Set(data.pnl.filter((r) => r.month).map((r) => r.month as number))].sort((a, b) => a - b);
+  const monthsWithData = monthFilter === 'all' ? allMonths : allMonths.filter((m) => m === monthFilter);
 
   const toggle = (id: string) =>
     setOpenSections((prev) => {
@@ -80,12 +83,23 @@ const AnnualPnL = () => {
 
   return (
     <div className="rounded-2xl border border-border bg-card overflow-hidden">
-      <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+      <div className="px-5 py-4 border-b border-border flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="font-semibold tracking-tight">Годовой P&L 2026</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Нажмите на цифру, чтобы изменить факт или план</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Нажмите на цифру или название, чтобы изменить</p>
         </div>
-        <span className="text-xs text-muted-foreground hidden sm:block">план / факт по месяцам</span>
+        <select
+          value={monthFilter}
+          onChange={(e) => setMonthFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+          className="text-sm rounded-lg border border-border bg-secondary px-3 py-1.5 outline-none"
+        >
+          <option value="all">Все месяцы</option>
+          {allMonths.map((m) => (
+            <option key={m} value={m}>
+              {monthNames[m - 1]}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="divide-y divide-border">
@@ -110,16 +124,28 @@ const AnnualPnL = () => {
 
               {isOpen && (
                 <div className="overflow-x-auto pb-2 animate-fade-in">
-                  <table className="w-full text-sm min-w-[880px]">
+                  <table className="w-full text-sm border-collapse" style={{ minWidth: monthsWithData.length * 160 + 200 }}>
                     <thead>
                       <tr className="border-b border-border">
-                        <th className="text-left px-5 py-2 font-medium text-muted-foreground sticky left-0 bg-card w-48">
+                        <th rowSpan={2} className="text-left px-5 py-2 font-medium text-muted-foreground sticky left-0 bg-card align-bottom w-52">
                           Показатель
                         </th>
                         {monthsWithData.map((m) => (
-                          <th key={m} className="text-right px-2.5 py-2 font-medium text-muted-foreground whitespace-nowrap">
+                          <th key={m} colSpan={2} className="text-center px-2.5 py-1.5 font-medium text-muted-foreground border-l border-border">
                             {monthNames[m - 1]}
                           </th>
+                        ))}
+                      </tr>
+                      <tr className="border-b border-border">
+                        {monthsWithData.map((m) => (
+                          <Fragment key={m}>
+                            <th className="text-right px-2 py-1.5 font-normal text-[11px] text-muted-foreground border-l border-border">
+                              План
+                            </th>
+                            <th className="text-right px-2 py-1.5 font-normal text-[11px] text-muted-foreground">
+                              Факт
+                            </th>
+                          </Fragment>
                         ))}
                       </tr>
                     </thead>
@@ -131,30 +157,35 @@ const AnnualPnL = () => {
                         const bold = section.bold?.has(key);
                         return (
                           <tr key={key} className={`hover:bg-secondary/20 ${bold ? 'bg-secondary/30' : ''}`}>
-                            <td className={`px-5 py-2 sticky left-0 bg-inherit ${bold ? 'font-semibold' : ''}`}>{label}</td>
+                            <td className={`px-5 py-1.5 sticky left-0 bg-inherit ${bold ? 'font-semibold' : ''}`}>
+                              <EditableLabel
+                                value={label}
+                                className={`text-sm ${bold ? 'font-semibold' : ''}`}
+                                onSave={(v) => renamePnLRow(key, v)}
+                              />
+                            </td>
                             {monthsWithData.map((m) => {
                               const r = rows.find((x) => x.month === m);
                               const fact = r?.fact;
                               const plan = r?.plan;
                               return (
-                                <td key={m} className="px-1 py-1.5 min-w-[92px]">
-                                  <EditableCell
-                                    value={fact ?? null}
-                                    negative={(fact ?? 0) < 0}
-                                    className={bold ? 'font-semibold' : ''}
-                                    onSave={(v) => updatePnL(m, key, 'fact', v)}
-                                  />
-                                  {plan !== null && plan !== undefined ? (
-                                    <div className="text-[10px] text-muted-foreground text-right pr-1.5 mt-0.5">
-                                      план{' '}
-                                      <EditableCell
-                                        value={plan}
-                                        className="text-[10px] inline-block w-auto"
-                                        onSave={(v) => updatePnL(m, key, 'plan', v)}
-                                      />
-                                    </div>
-                                  ) : null}
-                                </td>
+                                <Fragment key={m}>
+                                  <td className="px-1 py-1 min-w-[78px] border-l border-border">
+                                    <EditableCell
+                                      value={plan ?? null}
+                                      className="text-muted-foreground"
+                                      onSave={(v) => updatePnL(m, key, 'plan', v)}
+                                    />
+                                  </td>
+                                  <td className="px-1 py-1 min-w-[78px]">
+                                    <EditableCell
+                                      value={fact ?? null}
+                                      negative={(fact ?? 0) < 0}
+                                      className={bold ? 'font-semibold' : ''}
+                                      onSave={(v) => updatePnL(m, key, 'fact', v)}
+                                    />
+                                  </td>
+                                </Fragment>
                               );
                             })}
                           </tr>

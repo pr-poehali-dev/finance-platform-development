@@ -28,7 +28,7 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
 
     if method == 'GET':
         cur.execute(
-            "SELECT id, op_date, name, category, op_type, amount FROM operations ORDER BY op_date ASC"
+            "SELECT id, op_date, name, category, op_type, amount, status FROM operations ORDER BY op_date ASC"
         )
         rows = cur.fetchall()
         result = [
@@ -39,6 +39,7 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
                 'category': r[3],
                 'type': r[4],
                 'amount': float(r[5]),
+                'status': r[6],
             }
             for r in rows
         ]
@@ -53,16 +54,17 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
         category = str(body.get('category', '')).replace("'", "''")
         op_type = str(body.get('type', '')).replace("'", "''")
         amount = float(body.get('amount', 0))
+        status = str(body.get('status', 'actual')).replace("'", "''")
 
-        if op_type not in ('income', 'expense') or not name or amount <= 0:
+        if op_type not in ('income', 'expense') or not name or amount <= 0 or status not in ('planned', 'actual'):
             cur.close()
             conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректные данные операции'})}
 
         cur.execute(
-            f"INSERT INTO operations (op_date, name, category, op_type, amount) "
-            f"VALUES ('{date}', '{name}', '{category}', '{op_type}', {amount}) "
-            f"RETURNING id, op_date, name, category, op_type, amount"
+            f"INSERT INTO operations (op_date, name, category, op_type, amount, status) "
+            f"VALUES ('{date}', '{name}', '{category}', '{op_type}', {amount}, '{status}') "
+            f"RETURNING id, op_date, name, category, op_type, amount, status"
         )
         row = cur.fetchone()
         conn.commit()
@@ -73,6 +75,7 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
             'category': row[3],
             'type': row[4],
             'amount': float(row[5]),
+            'status': row[6],
         }
         cur.close()
         conn.close()
@@ -91,16 +94,17 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
         category = str(body.get('category', '')).replace("'", "''")
         op_type = str(body.get('type', '')).replace("'", "''")
         amount = float(body.get('amount', 0))
+        status = str(body.get('status', 'actual')).replace("'", "''")
 
-        if op_type not in ('income', 'expense') or not name or amount <= 0:
+        if op_type not in ('income', 'expense') or not name or amount <= 0 or status not in ('planned', 'actual'):
             cur.close()
             conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректные данные операции'})}
 
         cur.execute(
             f"UPDATE operations SET op_date = '{date}', name = '{name}', category = '{category}', "
-            f"op_type = '{op_type}', amount = {amount} WHERE id = {int(op_id)} "
-            f"RETURNING id, op_date, name, category, op_type, amount"
+            f"op_type = '{op_type}', amount = {amount}, status = '{status}' WHERE id = {int(op_id)} "
+            f"RETURNING id, op_date, name, category, op_type, amount, status"
         )
         row = cur.fetchone()
         conn.commit()
@@ -115,6 +119,7 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
             'category': row[3],
             'type': row[4],
             'amount': float(row[5]),
+            'status': row[6],
         }
         cur.close()
         conn.close()

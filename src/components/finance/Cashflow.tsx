@@ -63,6 +63,16 @@ const Cashflow = () => {
   const selectedOps = selectedDate ? opsByDate.get(selectedDate) ?? [] : [];
   const selectedFlow = selectedDate ? flowByDate.get(selectedDate) : undefined;
 
+  const monthDates = cells.filter((d): d is string => d !== null);
+  const dailyPlanFact = monthDates.map((date) => {
+    const ops = opsByDate.get(date) ?? [];
+    const planIncome = ops.filter((o) => o.status === 'planned' && o.type === 'income').reduce((a, o) => a + o.amount, 0);
+    const planExpense = ops.filter((o) => o.status === 'planned' && o.type === 'expense').reduce((a, o) => a + o.amount, 0);
+    const factIncome = ops.filter((o) => o.status === 'actual' && o.type === 'income').reduce((a, o) => a + o.amount, 0);
+    const factExpense = ops.filter((o) => o.status === 'actual' && o.type === 'expense').reduce((a, o) => a + o.amount, 0);
+    return { date, planIncome, planExpense, factIncome, factExpense, hasData: ops.length > 0 };
+  }).filter((d) => d.hasData);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -237,6 +247,50 @@ const Cashflow = () => {
           )}
         </div>
       </div>
+
+      {/* Plan vs fact by day */}
+      {dailyPlanFact.length > 0 && (
+        <div className="rounded-2xl border border-border bg-card overflow-hidden">
+          <div className="px-5 py-4 border-b border-border">
+            <h2 className="font-semibold tracking-tight">План / факт доходов и расходов по дням</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{monthLabel}</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted-foreground uppercase tracking-wide">
+                  <th className="text-left px-5 py-2.5 font-medium">Дата</th>
+                  <th className="text-right px-3 py-2.5 font-medium">План доход</th>
+                  <th className="text-right px-3 py-2.5 font-medium">Факт доход</th>
+                  <th className="text-right px-3 py-2.5 font-medium">План расход</th>
+                  <th className="text-right px-5 py-2.5 font-medium">Факт расход</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {dailyPlanFact.map((d) => (
+                  <tr key={d.date} className="hover:bg-secondary/30">
+                    <td className="px-5 py-2 font-medium whitespace-nowrap">
+                      {new Date(d.date).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })}
+                    </td>
+                    <td className="text-right px-3 py-2 font-mono tnum text-muted-foreground">
+                      {d.planIncome ? formatMoney(d.planIncome) : '—'}
+                    </td>
+                    <td className="text-right px-3 py-2 font-mono tnum text-income">
+                      {d.factIncome ? formatMoney(d.factIncome) : '—'}
+                    </td>
+                    <td className="text-right px-3 py-2 font-mono tnum text-muted-foreground">
+                      {d.planExpense ? formatMoney(d.planExpense) : '—'}
+                    </td>
+                    <td className="text-right px-5 py-2 font-mono tnum text-expense">
+                      {d.factExpense ? formatMoney(d.factExpense) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

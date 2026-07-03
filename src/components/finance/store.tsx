@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 export type OpType = 'income' | 'expense';
+export type OpStatus = 'planned' | 'actual';
 
 export interface Operation {
   id: number;
@@ -9,6 +10,7 @@ export interface Operation {
   category: string;
   type: OpType;
   amount: number;
+  status: OpStatus;
 }
 
 export const categories = ['Продажи', 'Услуги', 'ФОТ', 'Маркетинг', 'Помещение', 'Софт', 'Налоги', 'Прочее'];

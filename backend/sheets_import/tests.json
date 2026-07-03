@@ -1,0 +1,19 @@
+{
+  "tests": [
+    {
+      "name": "CORS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200,
+      "bodyMatcher": "none"
+    },
+    {
+      "name": "Некорректная ссылка возвращает ошибку",
+      "method": "POST",
+      "path": "/",
+      "body": {"url": "https://example.com", "year": 2026},
+      "expectedStatus": 400,
+      "bodyMatcher": "none"
+    }
+  ]
+}

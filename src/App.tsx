@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import { FinanceProvider } from "./components/finance/store";
 import { AnalyticsProvider } from "./components/finance/AnalyticsContext";
+import { SalariesProvider } from "./components/finance/SalariesContext";
 
 const queryClient = new QueryClient();
 
@@ -16,6 +17,7 @@ const App = () => (
     <TooltipProvider>
       <FinanceProvider>
       <AnalyticsProvider>
+      <SalariesProvider>
       <Toaster />
       <Sonner />
       <BrowserRouter>
@@ -25,6 +27,7 @@ const App = () => (
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
+      </SalariesProvider>
       </AnalyticsProvider>
       </FinanceProvider>
     </TooltipProvider>

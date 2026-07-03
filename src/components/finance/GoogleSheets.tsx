@@ -13,29 +13,47 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
+import { useAnalyticsCtx } from './AnalyticsContext';
+
+const SHEETS_IMPORT_URL = 'https://functions.poehali.dev/beea6773-0ac8-48a4-934d-7ee9c3010d56';
 
 const AddGoogleSheet = ({ trigger }: { trigger: React.ReactNode }) => {
+  const { refetch } = useAnalyticsCtx();
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
 
   const valid = /docs\.google\.com\/spreadsheets\/d\/[\w-]+/.test(url);
 
-  const connect = () => {
+  const connect = async () => {
     if (!valid) {
       toast({ title: 'Некорректная ссылка', description: 'Вставьте ссылку на Google Таблицу', variant: 'destructive' });
       return;
     }
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const res = await fetch(SHEETS_IMPORT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, year: 2026 }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast({ title: 'Не удалось импортировать', description: json.error ?? 'Проверьте доступ к таблице', variant: 'destructive' });
+        return;
+      }
+      toast({
+        title: 'Таблица подключена',
+        description: `Импортировано строк: ${json.importedRows}, новых полей создано: ${json.createdFields}`,
+      });
+      refetch();
       setOpen(false);
-      const saved = JSON.parse(localStorage.getItem('finance-os-sheets') || '[]');
-      saved.push({ url, connectedAt: Date.now() });
-      localStorage.setItem('finance-os-sheets', JSON.stringify(saved));
-      toast({ title: 'Таблица подключена', description: 'Данные будут синхронизироваться автоматически' });
       setUrl('');
-    }, 1200);
+    } catch {
+      toast({ title: 'Ошибка соединения', description: 'Не удалось связаться с сервером', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -45,7 +63,7 @@ const AddGoogleSheet = ({ trigger }: { trigger: React.ReactNode }) => {
         <DialogHeader>
           <DialogTitle>Подключить Google Таблицу</DialogTitle>
           <DialogDescription>
-            Откройте доступ по ссылке (Просмотр) и вставьте адрес таблицы.
+            Откройте доступ по ссылке (Просмотр для всех, у кого есть ссылка) и вставьте адрес таблицы.
           </DialogDescription>
         </DialogHeader>
 
@@ -65,7 +83,10 @@ const AddGoogleSheet = ({ trigger }: { trigger: React.ReactNode }) => {
           <div className="flex items-center gap-2 font-medium text-foreground">
             <Icon name="Info" size={14} /> Как распознаются данные
           </div>
-          <p>Столбцы «Дата», «Сумма», «Категория» определяются автоматически.</p>
+          <p>
+            Первая строка таблицы должна содержать названия месяцев (Январь, Февраль…). Первый столбец — название показателя.
+            Строки, которых ещё нет в P&L, будут созданы автоматически.
+          </p>
         </div>
 
         <DialogFooter>
@@ -75,11 +96,11 @@ const AddGoogleSheet = ({ trigger }: { trigger: React.ReactNode }) => {
           <Button onClick={connect} disabled={loading} className="gap-2">
             {loading ? (
               <>
-                <Icon name="Loader2" size={16} className="animate-spin" /> Подключаем…
+                <Icon name="Loader2" size={16} className="animate-spin" /> Импортируем…
               </>
             ) : (
               <>
-                <Icon name="Link" size={16} /> Подключить
+                <Icon name="Link" size={16} /> Подключить и импортировать
               </>
             )}
           </Button>

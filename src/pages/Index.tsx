@@ -8,6 +8,7 @@ import Cashflow from '@/components/finance/Cashflow';
 import AddGoogleSheet from '@/components/finance/GoogleSheets';
 import AnnualPnL from '@/components/finance/AnnualPnL';
 import Traffic from '@/components/finance/Traffic';
+import Salaries from '@/components/finance/Salaries';
 import { Period, periodLabels, buildPnL, forecast } from '@/components/finance/data';
 import { PnLPoint } from '@/components/finance/PnLChart';
 import { useFinance, formatMoney, Operation } from '@/components/finance/store';
@@ -24,13 +25,14 @@ interface ViewProps {
   margin: string;
 }
 
-type Tab = 'dashboard' | 'pnl' | 'cashflow' | 'traffic' | 'integrations' | 'settings';
+type Tab = 'dashboard' | 'pnl' | 'cashflow' | 'traffic' | 'salaries' | 'integrations' | 'settings';
 
 const nav: { id: Tab; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Дашборд', icon: 'LayoutDashboard' },
   { id: 'pnl', label: 'P&L отчёт', icon: 'TrendingUp' },
   { id: 'cashflow', label: 'Денежный поток', icon: 'CalendarClock' },
   { id: 'traffic', label: 'Трафик', icon: 'Radar' },
+  { id: 'salaries', label: 'Зарплаты', icon: 'Users' },
   { id: 'integrations', label: 'Интеграции', icon: 'Plug' },
   { id: 'settings', label: 'Настройки', icon: 'Settings2' },
 ];
@@ -119,6 +121,7 @@ const Index = () => {
               {tab === 'pnl' && <PnL {...{ period, setPeriod, data, profit, margin, totalIncome, totalExpense }} />}
               {tab === 'cashflow' && <Cashflow />}
               {tab === 'traffic' && <Traffic />}
+              {tab === 'salaries' && <Salaries />}
               {tab === 'integrations' && <Integrations />}
               {tab === 'settings' && <Settings />}
             </>
@@ -217,6 +220,46 @@ const Dashboard = ({ period, setPeriod, data, totalIncome, totalExpense, profit,
         {data.length ? <PnLChart data={data} /> : <Empty />}
       </div>
 
+      {data.length > 0 && (
+        <div className="rounded-2xl border border-border bg-card overflow-hidden">
+          <div className="px-5 py-4 border-b border-border">
+            <h2 className="font-semibold tracking-tight">Детализация по выбранному периоду</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Разбивка по операциям, ₽ тыс.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted-foreground uppercase tracking-wide">
+                  <th className="text-left px-5 py-2.5 font-medium">Период</th>
+                  <th className="text-right px-3 py-2.5 font-medium">Доходы</th>
+                  <th className="text-right px-3 py-2.5 font-medium">Расходы</th>
+                  <th className="text-right px-3 py-2.5 font-medium">Итог</th>
+                  <th className="text-right px-5 py-2.5 font-medium">Маржа</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {data.map((d) => {
+                  const net = d.income - d.expense;
+                  const m = d.income ? ((net / d.income) * 100).toFixed(1) : '0';
+                  return (
+                    <tr key={d.label} className="hover:bg-secondary/30">
+                      <td className="px-5 py-2.5 font-medium">{d.label}</td>
+                      <td className="text-right px-3 py-2.5 font-mono tnum text-income">{formatMoney(d.income)}</td>
+                      <td className="text-right px-3 py-2.5 font-mono tnum text-expense">{formatMoney(d.expense)}</td>
+                      <td className={`text-right px-3 py-2.5 font-mono tnum font-medium ${net >= 0 ? 'text-income' : 'text-expense'}`}>
+                        {net >= 0 ? '+' : ''}
+                        {formatMoney(net)}
+                      </td>
+                      <td className="text-right px-5 py-2.5 font-mono tnum text-muted-foreground">{m}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <ForecastCard />
     </div>
   );
@@ -296,10 +339,6 @@ const PnL = ({ period, setPeriod, data, profit, margin, totalIncome, totalExpens
         <AddOperation />
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-6">
-        {data.length ? <PnLChart data={data} /> : <Empty />}
-      </div>
-
       <AnnualPnL />
 
       <div className="grid lg:grid-cols-2 gap-6">
@@ -351,6 +390,14 @@ const PnL = ({ period, setPeriod, data, profit, margin, totalIncome, totalExpens
           <Row label="Чистая прибыль" value={`${formatMoney(profit)} ₽`} big />
           <Row label="Рентабельность" value={`${margin}%`} accent />
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold tracking-tight">График по операциям</h2>
+          <span className="text-xs text-muted-foreground">₽, тыс.</span>
+        </div>
+        {data.length ? <PnLChart data={data} /> : <Empty />}
       </div>
     </div>
   );
