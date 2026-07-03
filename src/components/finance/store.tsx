@@ -11,74 +11,91 @@ export interface Operation {
   amount: number;
 }
 
-const iso = (d: Date) => d.toISOString().slice(0, 10);
-const today = new Date();
-const day = (offset: number) => {
-  const d = new Date(today);
-  d.setDate(d.getDate() + offset);
-  return iso(d);
-};
-
-const seed: Operation[] = [
-  { id: 1, date: day(-2), name: 'Оплата от ООО «Ветер»', category: 'Продажи', type: 'income', amount: 480000 },
-  { id: 2, date: day(-1), name: 'Аренда офиса', category: 'Помещение', type: 'expense', amount: 120000 },
-  { id: 3, date: day(0), name: 'Подписка Битрикс24', category: 'Софт', type: 'expense', amount: 24000 },
-  { id: 4, date: day(1), name: 'Оплата от ИП Смирнов', category: 'Услуги', type: 'income', amount: 215000 },
-  { id: 5, date: day(3), name: 'Зарплата команды', category: 'ФОТ', type: 'expense', amount: 680000 },
-  { id: 6, date: day(5), name: 'Рекламный бюджет', category: 'Маркетинг', type: 'expense', amount: 95000 },
-  { id: 7, date: day(7), name: 'Оплата от ООО «Каскад»', category: 'Продажи', type: 'income', amount: 360000 },
-  { id: 8, date: day(10), name: 'Налоги', category: 'Налоги', type: 'expense', amount: 210000 },
-];
-
 export const categories = ['Продажи', 'Услуги', 'ФОТ', 'Маркетинг', 'Помещение', 'Софт', 'Налоги', 'Прочее'];
 
 export function formatMoney(n: number): string {
   return n.toLocaleString('ru-RU');
 }
 
+const OPERATIONS_URL = 'https://functions.poehali.dev/c9c68388-a303-4909-9e0e-6748ac619e00';
+const SETTINGS_URL = 'https://functions.poehali.dev/d25e10c5-778d-4054-9050-bfd9274135a1';
+
 interface Store {
   operations: Operation[];
-  addOperation: (op: Omit<Operation, 'id'>) => void;
-  removeOperation: (id: number) => void;
+  loading: boolean;
+  error: string | null;
+  addOperation: (op: Omit<Operation, 'id'>) => Promise<void>;
+  removeOperation: (id: number) => Promise<void>;
   startBalance: number;
   setStartBalance: (n: number) => void;
 }
 
 const Ctx = createContext<Store | null>(null);
 
-const KEY = 'finance-os-ops';
-const BAL_KEY = 'finance-os-balance';
-
 export const FinanceProvider = ({ children }: { children: ReactNode }) => {
-  const [operations, setOperations] = useState<Operation[]>(() => {
+  const [operations, setOperations] = useState<Operation[]>([]);
+  const [startBalance, setStartBalanceState] = useState<number>(500000);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    Promise.all([
+      fetch(OPERATIONS_URL).then((r) => r.json()),
+      fetch(SETTINGS_URL).then((r) => r.json()),
+    ])
+      .then(([ops, settings]) => {
+        if (cancelled) return;
+        setOperations(ops);
+        if (settings?.start_balance) setStartBalanceState(Number(settings.start_balance));
+      })
+      .catch(() => {
+        if (!cancelled) setError('Не удалось загрузить данные с сервера');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const addOperation = async (op: Omit<Operation, 'id'>) => {
+    const res = await fetch(OPERATIONS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(op),
+    });
+    if (!res.ok) throw new Error('Не удалось сохранить операцию');
+    const saved: Operation = await res.json();
+    setOperations((prev) => [...prev, saved]);
+  };
+
+  const removeOperation = async (id: number) => {
+    const prev = operations;
+    setOperations((p) => p.filter((o) => o.id !== id));
     try {
-      const raw = localStorage.getItem(KEY);
-      return raw ? JSON.parse(raw) : seed;
+      const res = await fetch(`${OPERATIONS_URL}?id=${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
     } catch {
-      return seed;
+      setOperations(prev);
+      throw new Error('Не удалось удалить операцию');
     }
-  });
-  const [startBalance, setStartBalance] = useState<number>(() => {
-    const raw = localStorage.getItem(BAL_KEY);
-    return raw ? Number(raw) : 500000;
-  });
+  };
 
-  useEffect(() => {
-    localStorage.setItem(KEY, JSON.stringify(operations));
-  }, [operations]);
-
-  useEffect(() => {
-    localStorage.setItem(BAL_KEY, String(startBalance));
-  }, [startBalance]);
-
-  const addOperation = (op: Omit<Operation, 'id'>) =>
-    setOperations((prev) => [...prev, { ...op, id: Date.now() }]);
-
-  const removeOperation = (id: number) =>
-    setOperations((prev) => prev.filter((o) => o.id !== id));
+  const setStartBalance = (n: number) => {
+    setStartBalanceState(n);
+    fetch(SETTINGS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start_balance: n }),
+    }).catch(() => {});
+  };
 
   return (
-    <Ctx.Provider value={{ operations, addOperation, removeOperation, startBalance, setStartBalance }}>
+    <Ctx.Provider value={{ operations, loading, error, addOperation, removeOperation, startBalance, setStartBalance }}>
       {children}
     </Ctx.Provider>
   );

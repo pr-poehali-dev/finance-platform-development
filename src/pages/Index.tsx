@@ -33,7 +33,7 @@ const nav: { id: Tab; label: string; icon: string }[] = [
 const Index = () => {
   const [tab, setTab] = useState<Tab>('dashboard');
   const [period, setPeriod] = useState<Period>('quarter');
-  const { operations } = useFinance();
+  const { operations, loading, error } = useFinance();
 
   const data = buildPnL(operations, period);
   const totalIncome = operations.filter((o) => o.type === 'income').reduce((a, o) => a + o.amount, 0);
@@ -96,13 +96,27 @@ const Index = () => {
         </header>
 
         <div className="p-6 md:p-10 max-w-6xl mx-auto animate-fade-in" key={tab}>
-          {tab === 'dashboard' && (
-            <Dashboard {...{ period, setPeriod, data, totalIncome, totalExpense, profit, margin }} />
+          {loading ? (
+            <div className="py-24 text-center text-muted-foreground">
+              <Icon name="Loader2" size={28} className="mx-auto mb-3 animate-spin" />
+              <p className="text-sm">Загружаем данные с сервера…</p>
+            </div>
+          ) : error ? (
+            <div className="py-24 text-center text-expense">
+              <Icon name="CloudOff" size={28} className="mx-auto mb-3" />
+              <p className="text-sm">{error}</p>
+            </div>
+          ) : (
+            <>
+              {tab === 'dashboard' && (
+                <Dashboard {...{ period, setPeriod, data, totalIncome, totalExpense, profit, margin }} />
+              )}
+              {tab === 'pnl' && <PnL {...{ period, setPeriod, data, profit, margin, totalIncome, totalExpense }} />}
+              {tab === 'cashflow' && <Cashflow />}
+              {tab === 'integrations' && <Integrations />}
+              {tab === 'settings' && <Settings />}
+            </>
           )}
-          {tab === 'pnl' && <PnL {...{ period, setPeriod, data, profit, margin, totalIncome, totalExpense }} />}
-          {tab === 'cashflow' && <Cashflow />}
-          {tab === 'integrations' && <Integrations />}
-          {tab === 'settings' && <Settings />}
         </div>
       </main>
     </div>
@@ -241,8 +255,9 @@ const PnL = ({ period, setPeriod, data, profit, margin, totalIncome, totalExpens
                 </div>
                 <button
                   onClick={() => {
-                    removeOperation(t.id);
-                    toast({ title: 'Операция удалена' });
+                    removeOperation(t.id)
+                      .then(() => toast({ title: 'Операция удалена' }))
+                      .catch(() => toast({ title: 'Не удалось удалить операцию', variant: 'destructive' }));
                   }}
                   className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-expense transition"
                 >

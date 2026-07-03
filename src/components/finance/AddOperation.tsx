@@ -38,16 +38,25 @@ const AddOperation = ({ trigger }: { trigger?: React.ReactNode }) => {
     setType('income');
   };
 
-  const submit = () => {
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
     const value = Number(amount.replace(/\s/g, ''));
     if (!name.trim() || !value) {
       toast({ title: 'Заполните название и сумму', variant: 'destructive' });
       return;
     }
-    addOperation({ name: name.trim(), amount: value, category, date, type });
-    toast({ title: 'Операция добавлена', description: `${name} · ${value.toLocaleString('ru-RU')} ₽` });
-    reset();
-    setOpen(false);
+    setSaving(true);
+    try {
+      await addOperation({ name: name.trim(), amount: value, category, date, type });
+      toast({ title: 'Операция добавлена', description: `${name} · ${value.toLocaleString('ru-RU')} ₽` });
+      reset();
+      setOpen(false);
+    } catch {
+      toast({ title: 'Не удалось сохранить операцию', description: 'Проверьте соединение и попробуйте снова', variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -124,8 +133,9 @@ const AddOperation = ({ trigger }: { trigger?: React.ReactNode }) => {
           <Button variant="outline" onClick={() => setOpen(false)}>
             Отмена
           </Button>
-          <Button onClick={submit} className="gap-2">
-            <Icon name="Check" size={16} /> Сохранить
+          <Button onClick={submit} disabled={saving} className="gap-2">
+            {saving ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Check" size={16} />}
+            Сохранить
           </Button>
         </DialogFooter>
       </DialogContent>
