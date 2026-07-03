@@ -1,4 +1,10 @@
-import { PnLPoint, formatMoney } from './data';
+import { formatMoney } from './store';
+
+export interface PnLPoint {
+  label: string;
+  income: number;
+  expense: number;
+}
 
 interface Props {
   data: PnLPoint[];

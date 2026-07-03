@@ -1,3 +1,6 @@
+import { Operation } from './store';
+import { PnLPoint } from './PnLChart';
+
 export type Period = 'month' | 'quarter' | 'year';
 
 export const periodLabels: Record<Period, string> = {
@@ -6,57 +9,41 @@ export const periodLabels: Record<Period, string> = {
   year: 'Год',
 };
 
-export interface PnLPoint {
-  label: string;
-  income: number;
-  expense: number;
+const monthNames = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
+
+// Aggregate operations into chart points depending on selected period
+export function buildPnL(ops: Operation[], period: Period): PnLPoint[] {
+  const buckets = new Map<string, { income: number; expense: number; order: number }>();
+
+  for (const o of ops) {
+    const d = new Date(o.date);
+    let key = '';
+    let order = 0;
+    if (period === 'month') {
+      const week = Math.ceil(d.getDate() / 7);
+      key = `${week} нед`;
+      order = d.getMonth() * 5 + week;
+    } else if (period === 'quarter') {
+      key = monthNames[d.getMonth()];
+      order = d.getMonth();
+    } else {
+      const q = Math.floor(d.getMonth() / 3) + 1;
+      key = `Q${q}`;
+      order = q;
+    }
+    const cur = buckets.get(key) ?? { income: 0, expense: 0, order };
+    if (o.type === 'income') cur.income += o.amount;
+    else cur.expense += o.amount;
+    buckets.set(key, cur);
+  }
+
+  return [...buckets.entries()]
+    .sort((a, b) => a[1].order - b[1].order)
+    .map(([label, v]) => ({ label, income: Math.round(v.income / 1000), expense: Math.round(v.expense / 1000) }));
 }
-
-export const pnlData: Record<Period, PnLPoint[]> = {
-  month: [
-    { label: '1 нед', income: 820, expense: 540 },
-    { label: '2 нед', income: 940, expense: 610 },
-    { label: '3 нед', income: 1120, expense: 700 },
-    { label: '4 нед', income: 1310, expense: 820 },
-  ],
-  quarter: [
-    { label: 'Янв', income: 3200, expense: 2100 },
-    { label: 'Фев', income: 3600, expense: 2300 },
-    { label: 'Мар', income: 4190, expense: 2670 },
-  ],
-  year: [
-    { label: 'Q1', income: 10990, expense: 7070 },
-    { label: 'Q2', income: 12400, expense: 8100 },
-    { label: 'Q3', income: 13850, expense: 8600 },
-    { label: 'Q4', income: 15200, expense: 9200 },
-  ],
-};
-
-export interface Transaction {
-  id: number;
-  date: string;
-  name: string;
-  category: string;
-  type: 'income' | 'expense';
-  amount: number;
-}
-
-export const transactions: Transaction[] = [
-  { id: 1, date: '02 июл', name: 'Оплата от ООО «Ветер»', category: 'Продажи', type: 'income', amount: 480000 },
-  { id: 2, date: '01 июл', name: 'Аренда офиса', category: 'Помещение', type: 'expense', amount: 120000 },
-  { id: 3, date: '30 июн', name: 'Подписка Битрикс24', category: 'Софт', type: 'expense', amount: 24000 },
-  { id: 4, date: '28 июн', name: 'Оплата от ИП Смирнов', category: 'Услуги', type: 'income', amount: 215000 },
-  { id: 5, date: '27 июн', name: 'Зарплата команды', category: 'ФОТ', type: 'expense', amount: 680000 },
-  { id: 6, date: '25 июн', name: 'Рекламный бюджет', category: 'Маркетинг', type: 'expense', amount: 95000 },
-  { id: 7, date: '24 июн', name: 'Оплата от ООО «Каскад»', category: 'Продажи', type: 'income', amount: 360000 },
-];
 
 export const forecast = [
-  { label: 'Авг', value: 4300, projected: true },
-  { label: 'Сен', value: 4650, projected: true },
-  { label: 'Окт', value: 5020, projected: true },
+  { label: 'След. мес', value: 4300 },
+  { label: '+2 мес', value: 4650 },
+  { label: '+3 мес', value: 5020 },
 ];
-
-export function formatMoney(n: number): string {
-  return n.toLocaleString('ru-RU');
-}

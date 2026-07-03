@@ -1,21 +1,31 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
+import { toast } from '@/hooks/use-toast';
 import PnLChart from '@/components/finance/PnLChart';
-import {
-  Period,
-  periodLabels,
-  pnlData,
-  transactions,
-  forecast,
-  formatMoney,
-} from '@/components/finance/data';
+import AddOperation from '@/components/finance/AddOperation';
+import Cashflow from '@/components/finance/Cashflow';
+import AddGoogleSheet from '@/components/finance/GoogleSheets';
+import { Period, periodLabels, buildPnL, forecast } from '@/components/finance/data';
+import { PnLPoint } from '@/components/finance/PnLChart';
+import { useFinance, formatMoney, Operation } from '@/components/finance/store';
 
-type Tab = 'dashboard' | 'pnl' | 'integrations' | 'settings';
+interface ViewProps {
+  period: Period;
+  setPeriod: (p: Period) => void;
+  data: PnLPoint[];
+  totalIncome: number;
+  totalExpense: number;
+  profit: number;
+  margin: string;
+}
+
+type Tab = 'dashboard' | 'pnl' | 'cashflow' | 'integrations' | 'settings';
 
 const nav: { id: Tab; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Дашборд', icon: 'LayoutDashboard' },
   { id: 'pnl', label: 'P&L отчёт', icon: 'TrendingUp' },
+  { id: 'cashflow', label: 'Денежный поток', icon: 'CalendarClock' },
   { id: 'integrations', label: 'Интеграции', icon: 'Plug' },
   { id: 'settings', label: 'Настройки', icon: 'Settings2' },
 ];
@@ -23,12 +33,13 @@ const nav: { id: Tab; label: string; icon: string }[] = [
 const Index = () => {
   const [tab, setTab] = useState<Tab>('dashboard');
   const [period, setPeriod] = useState<Period>('quarter');
+  const { operations } = useFinance();
 
-  const data = pnlData[period];
-  const totalIncome = data.reduce((a, d) => a + d.income, 0);
-  const totalExpense = data.reduce((a, d) => a + d.expense, 0);
+  const data = buildPnL(operations, period);
+  const totalIncome = operations.filter((o) => o.type === 'income').reduce((a, o) => a + o.amount, 0);
+  const totalExpense = operations.filter((o) => o.type === 'expense').reduce((a, o) => a + o.amount, 0);
   const profit = totalIncome - totalExpense;
-  const margin = ((profit / totalIncome) * 100).toFixed(1);
+  const margin = totalIncome ? ((profit / totalIncome) * 100).toFixed(1) : '0';
 
   return (
     <div className="min-h-screen flex bg-background text-foreground">
@@ -71,19 +82,13 @@ const Index = () => {
 
       {/* Main */}
       <main className="flex-1 min-w-0">
-        {/* Topbar */}
         <header className="flex items-center justify-between px-6 md:px-10 py-5 border-b border-border">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">
-              {nav.find((n) => n.id === tab)?.label}
-            </h1>
+            <h1 className="text-xl font-semibold tracking-tight">{nav.find((n) => n.id === tab)?.label}</h1>
             <p className="text-sm text-muted-foreground">Финансовая отчётность компании</p>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" className="gap-2">
-              <Icon name="FileSpreadsheet" size={16} />
-              <span className="hidden sm:inline">Импорт Excel</span>
-            </Button>
+            <AddOperation />
             <div className="w-9 h-9 rounded-full bg-accent flex items-center justify-center text-sm font-medium text-accent-foreground">
               АК
             </div>
@@ -92,19 +97,10 @@ const Index = () => {
 
         <div className="p-6 md:p-10 max-w-6xl mx-auto animate-fade-in" key={tab}>
           {tab === 'dashboard' && (
-            <Dashboard
-              period={period}
-              setPeriod={setPeriod}
-              data={data}
-              totalIncome={totalIncome}
-              totalExpense={totalExpense}
-              profit={profit}
-              margin={margin}
-            />
+            <Dashboard {...{ period, setPeriod, data, totalIncome, totalExpense, profit, margin }} />
           )}
-          {tab === 'pnl' && (
-            <PnL period={period} setPeriod={setPeriod} data={data} profit={profit} margin={margin} totalIncome={totalIncome} totalExpense={totalExpense} />
-          )}
+          {tab === 'pnl' && <PnL {...{ period, setPeriod, data, profit, margin, totalIncome, totalExpense }} />}
+          {tab === 'cashflow' && <Cashflow />}
           {tab === 'integrations' && <Integrations />}
           {tab === 'settings' && <Settings />}
         </div>
@@ -130,20 +126,7 @@ const PeriodTabs = ({ period, setPeriod }: { period: Period; setPeriod: (p: Peri
   </div>
 );
 
-/* ---------- Metric card ---------- */
-const Metric = ({
-  label,
-  value,
-  delta,
-  positive,
-  icon,
-}: {
-  label: string;
-  value: string;
-  delta: string;
-  positive?: boolean;
-  icon: string;
-}) => (
+const Metric = ({ label, value, delta, positive, icon }: { label: string; value: string; delta: string; positive?: boolean; icon: string }) => (
   <div className="rounded-2xl border border-border bg-card p-5">
     <div className="flex items-center justify-between mb-3">
       <span className="text-sm text-muted-foreground">{label}</span>
@@ -158,30 +141,11 @@ const Metric = ({
 );
 
 /* ---------- Dashboard ---------- */
-const Dashboard = ({
-  period,
-  setPeriod,
-  data,
-  totalIncome,
-  totalExpense,
-  profit,
-  margin,
-}: {
-  period: Period;
-  setPeriod: (p: Period) => void;
-  data: ReturnType<typeof pnlData.month>;
-  totalIncome: number;
-  totalExpense: number;
-  profit: number;
-  margin: string;
-}) => (
+const Dashboard = ({ period, setPeriod, data, totalIncome, totalExpense, profit, margin }: ViewProps) => (
   <div className="space-y-6">
     <div className="flex items-center justify-between flex-wrap gap-3">
       <PeriodTabs period={period} setPeriod={setPeriod} />
-      <Button variant="outline" size="sm" className="gap-2">
-        <Icon name="Calendar" size={16} />
-        Выбрать даты
-      </Button>
+      <AddOperation trigger={<Button variant="outline" size="sm" className="gap-2"><Icon name="Plus" size={16} /> Внести данные</Button>} />
     </div>
 
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -196,14 +160,20 @@ const Dashboard = ({
         <h2 className="font-semibold tracking-tight">Доходы и расходы</h2>
         <span className="text-xs text-muted-foreground">₽, тыс.</span>
       </div>
-      <PnLChart data={data} />
+      {data.length ? <PnLChart data={data} /> : <Empty />}
     </div>
 
     <ForecastCard />
   </div>
 );
 
-/* ---------- AI Forecast ---------- */
+const Empty = () => (
+  <div className="py-12 text-center text-muted-foreground">
+    <Icon name="Inbox" size={32} className="mx-auto mb-2 opacity-40" />
+    <p className="text-sm">Нет данных за период. Добавьте операцию.</p>
+  </div>
+);
+
 const ForecastCard = () => {
   const max = Math.max(...forecast.map((f) => f.value));
   return (
@@ -214,18 +184,13 @@ const ForecastCard = () => {
           <Icon name="Sparkles" size={18} className="text-accent" />
           <h2 className="font-semibold tracking-tight">AI-прогноз выручки</h2>
         </div>
-        <p className="text-sm text-primary-foreground/60 mb-6">
-          На основе исторических данных · точность модели 92%
-        </p>
+        <p className="text-sm text-primary-foreground/60 mb-6">На основе исторических данных · точность модели 92%</p>
         <div className="flex items-end gap-6">
           {forecast.map((f) => (
             <div key={f.label} className="flex-1 flex flex-col items-center gap-2">
               <span className="text-sm font-mono tnum">{formatMoney(f.value)}к</span>
               <div className="w-full flex items-end justify-center h-28">
-                <div
-                  className="w-full max-w-[56px] rounded-t-md bg-accent/80"
-                  style={{ height: `${(f.value / max) * 100}%` }}
-                />
+                <div className="w-full max-w-[56px] rounded-t-md bg-accent/80" style={{ height: `${(f.value / max) * 100}%` }} />
               </div>
               <span className="text-xs text-primary-foreground/60">{f.label}</span>
             </div>
@@ -237,164 +202,153 @@ const ForecastCard = () => {
 };
 
 /* ---------- P&L report ---------- */
-const PnL = ({
-  period,
-  setPeriod,
-  data,
-  profit,
-  margin,
-  totalIncome,
-  totalExpense,
-}: {
-  period: Period;
-  setPeriod: (p: Period) => void;
-  data: ReturnType<typeof pnlData.month>;
-  profit: number;
-  margin: string;
-  totalIncome: number;
-  totalExpense: number;
-}) => (
-  <div className="space-y-6">
-    <PeriodTabs period={period} setPeriod={setPeriod} />
+const PnL = ({ period, setPeriod, data, profit, margin, totalIncome, totalExpense }: ViewProps) => {
+  const { operations, removeOperation } = useFinance();
+  const sorted = [...operations].sort((a, b) => b.date.localeCompare(a.date));
 
-    <div className="rounded-2xl border border-border bg-card p-6">
-      <PnLChart data={data} />
-    </div>
-
-    <div className="grid lg:grid-cols-2 gap-6">
-      <div className="rounded-2xl border border-border bg-card overflow-hidden">
-        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-          <h2 className="font-semibold tracking-tight">Операции</h2>
-          <span className="text-xs text-muted-foreground">{transactions.length} записей</span>
-        </div>
-        <div className="divide-y divide-border">
-          {transactions.map((t) => (
-            <div key={t.id} className="flex items-center gap-3 px-5 py-3">
-              <div
-                className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                  t.type === 'income' ? 'bg-income/10' : 'bg-expense/10'
-                }`}
-              >
-                <Icon
-                  name={t.type === 'income' ? 'ArrowDownLeft' : 'ArrowUpRight'}
-                  size={16}
-                  className={t.type === 'income' ? 'text-income' : 'text-expense'}
-                />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium truncate">{t.name}</div>
-                <div className="text-xs text-muted-foreground">{t.category} · {t.date}</div>
-              </div>
-              <div className={`text-sm font-mono tnum font-medium ${t.type === 'income' ? 'text-income' : 'text-foreground'}`}>
-                {t.type === 'income' ? '+' : '−'}{formatMoney(t.amount)} ₽
-              </div>
-            </div>
-          ))}
-        </div>
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <PeriodTabs period={period} setPeriod={setPeriod} />
+        <AddOperation />
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-6 space-y-4 h-fit">
-        <h2 className="font-semibold tracking-tight">Итог за период</h2>
-        <Row label="Выручка" value={`${formatMoney(totalIncome)} ₽`} />
-        <Row label="Себестоимость и расходы" value={`−${formatMoney(totalExpense)} ₽`} muted />
-        <div className="h-px bg-border" />
-        <Row label="Чистая прибыль" value={`${formatMoney(profit)} ₽`} big />
-        <Row label="Рентабельность" value={`${margin}%`} accent />
+      <div className="rounded-2xl border border-border bg-card p-6">
+        {data.length ? <PnLChart data={data} /> : <Empty />}
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        <div className="rounded-2xl border border-border bg-card overflow-hidden">
+          <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+            <h2 className="font-semibold tracking-tight">Операции</h2>
+            <span className="text-xs text-muted-foreground">{operations.length} записей</span>
+          </div>
+          <div className="divide-y divide-border max-h-[420px] overflow-auto">
+            {sorted.map((t: Operation) => (
+              <div key={t.id} className="group flex items-center gap-3 px-5 py-3">
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${t.type === 'income' ? 'bg-income/10' : 'bg-expense/10'}`}>
+                  <Icon name={t.type === 'income' ? 'ArrowDownLeft' : 'ArrowUpRight'} size={16} className={t.type === 'income' ? 'text-income' : 'text-expense'} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium truncate">{t.name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {t.category} · {new Date(t.date).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })}
+                  </div>
+                </div>
+                <div className={`text-sm font-mono tnum font-medium ${t.type === 'income' ? 'text-income' : 'text-foreground'}`}>
+                  {t.type === 'income' ? '+' : '−'}
+                  {formatMoney(t.amount)} ₽
+                </div>
+                <button
+                  onClick={() => {
+                    removeOperation(t.id);
+                    toast({ title: 'Операция удалена' });
+                  }}
+                  className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-expense transition"
+                >
+                  <Icon name="Trash2" size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-6 space-y-4 h-fit">
+          <h2 className="font-semibold tracking-tight">Итог за период</h2>
+          <Row label="Выручка" value={`${formatMoney(totalIncome)} ₽`} />
+          <Row label="Себестоимость и расходы" value={`−${formatMoney(totalExpense)} ₽`} muted />
+          <div className="h-px bg-border" />
+          <Row label="Чистая прибыль" value={`${formatMoney(profit)} ₽`} big />
+          <Row label="Рентабельность" value={`${margin}%`} accent />
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 const Row = ({ label, value, muted, big, accent }: { label: string; value: string; muted?: boolean; big?: boolean; accent?: boolean }) => (
   <div className="flex items-center justify-between">
     <span className={`text-sm ${muted ? 'text-muted-foreground' : 'text-foreground'}`}>{label}</span>
-    <span className={`font-mono tnum ${big ? 'text-xl font-semibold' : 'text-sm font-medium'} ${accent ? 'text-income' : ''}`}>
-      {value}
-    </span>
+    <span className={`font-mono tnum ${big ? 'text-xl font-semibold' : 'text-sm font-medium'} ${accent ? 'text-income' : ''}`}>{value}</span>
   </div>
 );
 
 /* ---------- Integrations ---------- */
 const Integrations = () => (
   <div className="grid md:grid-cols-2 gap-5">
-    <IntegrationCard
-      icon="Building2"
-      title="Битрикс24"
-      desc="Автоматическая выгрузка сделок и платежей из CRM в отчёты."
-      status="Подключить"
-      accent
-    />
-    <IntegrationCard
-      icon="FileSpreadsheet"
-      title="Excel / .xlsx"
-      desc="Загрузите файл — система распознает столбцы и построит отчёт."
-      status="Загрузить файл"
-    />
-    <IntegrationCard
-      icon="Sheet"
-      title="Google Таблицы"
-      desc="Подключите таблицу по ссылке и синхронизируйте данные."
-      status="Вставить ссылку"
-    />
-    <IntegrationCard
-      icon="Landmark"
-      title="Банковская выписка"
-      desc="Импорт выписки 1С и загрузка операций по счёту."
-      status="Скоро"
-      disabled
-    />
+    <div className="rounded-2xl border border-border bg-card p-6 flex flex-col">
+      <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4 bg-accent/10">
+        <Icon name="Building2" size={22} className="text-accent" />
+      </div>
+      <h3 className="font-semibold tracking-tight mb-1">Битрикс24</h3>
+      <p className="text-sm text-muted-foreground leading-relaxed mb-5 flex-1">Автоматическая выгрузка сделок и платежей из CRM в отчёты.</p>
+      <Button
+        className="w-full"
+        onClick={() => toast({ title: 'Битрикс24', description: 'Введите вебхук-ссылку в настройках интеграции' })}
+      >
+        Подключить
+      </Button>
+    </div>
+
+    <div className="rounded-2xl border border-border bg-card p-6 flex flex-col">
+      <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4 bg-secondary">
+        <Icon name="Sheet" size={22} className="text-foreground" />
+      </div>
+      <h3 className="font-semibold tracking-tight mb-1">Google Таблицы</h3>
+      <p className="text-sm text-muted-foreground leading-relaxed mb-5 flex-1">Подключите таблицу по ссылке — данные распознаются автоматически.</p>
+      <AddGoogleSheet trigger={<Button variant="outline" className="w-full gap-2"><Icon name="Link" size={16} /> Вставить ссылку</Button>} />
+    </div>
+
+    <div className="rounded-2xl border border-border bg-card p-6 flex flex-col">
+      <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4 bg-secondary">
+        <Icon name="FileSpreadsheet" size={22} className="text-foreground" />
+      </div>
+      <h3 className="font-semibold tracking-tight mb-1">Excel / .xlsx</h3>
+      <p className="text-sm text-muted-foreground leading-relaxed mb-5 flex-1">Загрузите файл — система распознает столбцы и построит отчёт.</p>
+      <ExcelUpload />
+    </div>
+
+    <div className="rounded-2xl border border-border bg-card p-6 flex flex-col">
+      <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4 bg-secondary">
+        <Icon name="Landmark" size={22} className="text-foreground" />
+      </div>
+      <h3 className="font-semibold tracking-tight mb-1">Банковская выписка</h3>
+      <p className="text-sm text-muted-foreground leading-relaxed mb-5 flex-1">Импорт выписки 1С и загрузка операций по счёту.</p>
+      <Button variant="outline" className="w-full" disabled>Скоро</Button>
+    </div>
   </div>
 );
 
-const IntegrationCard = ({
-  icon,
-  title,
-  desc,
-  status,
-  accent,
-  disabled,
-}: {
-  icon: string;
-  title: string;
-  desc: string;
-  status: string;
-  accent?: boolean;
-  disabled?: boolean;
-}) => (
-  <div className="rounded-2xl border border-border bg-card p-6 flex flex-col">
-    <div className={`w-11 h-11 rounded-xl flex items-center justify-center mb-4 ${accent ? 'bg-accent/10' : 'bg-secondary'}`}>
-      <Icon name={icon} size={22} className={accent ? 'text-accent' : 'text-foreground'} />
-    </div>
-    <h3 className="font-semibold tracking-tight mb-1">{title}</h3>
-    <p className="text-sm text-muted-foreground leading-relaxed mb-5 flex-1">{desc}</p>
-    <Button variant={accent ? 'default' : 'outline'} size="sm" disabled={disabled} className="w-full">
-      {status}
-    </Button>
-  </div>
-);
+const ExcelUpload = () => {
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) toast({ title: 'Файл загружен', description: `${file.name} · распознаём данные…` });
+  };
+  return (
+    <label>
+      <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={onFile} />
+      <Button variant="outline" className="w-full gap-2" asChild>
+        <span><Icon name="Upload" size={16} /> Загрузить файл</span>
+      </Button>
+    </label>
+  );
+};
 
 /* ---------- Settings ---------- */
 const Settings = () => (
   <div className="max-w-2xl space-y-6">
     <SettingBlock title="Категории" desc="Управление статьями доходов и расходов">
       <div className="flex flex-wrap gap-2">
-        {['Продажи', 'Услуги', 'ФОТ', 'Маркетинг', 'Помещение', 'Софт'].map((c) => (
-          <span key={c} className="px-3 py-1.5 rounded-lg bg-secondary text-sm border border-border">
-            {c}
-          </span>
+        {['Продажи', 'Услуги', 'ФОТ', 'Маркетинг', 'Помещение', 'Софт', 'Налоги'].map((c) => (
+          <span key={c} className="px-3 py-1.5 rounded-lg bg-secondary text-sm border border-border">{c}</span>
         ))}
-        <button className="px-3 py-1.5 rounded-lg border border-dashed border-border text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
-          <Icon name="Plus" size={14} /> Добавить
-        </button>
       </div>
     </SettingBlock>
 
     <SettingBlock title="Валюта" desc="Основная валюта отчётов">
       <div className="inline-flex p-1 rounded-lg bg-secondary border border-border">
         {['₽ RUB', '$ USD', '€ EUR'].map((c, i) => (
-          <button key={c} className={`px-4 py-1.5 rounded-md text-sm ${i === 0 ? 'bg-card shadow-sm font-medium' : 'text-muted-foreground'}`}>
-            {c}
-          </button>
+          <button key={c} className={`px-4 py-1.5 rounded-md text-sm ${i === 0 ? 'bg-card shadow-sm font-medium' : 'text-muted-foreground'}`}>{c}</button>
         ))}
       </div>
     </SettingBlock>
