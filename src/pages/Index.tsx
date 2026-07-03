@@ -6,6 +6,8 @@ import PnLChart from '@/components/finance/PnLChart';
 import AddOperation from '@/components/finance/AddOperation';
 import Cashflow from '@/components/finance/Cashflow';
 import AddGoogleSheet from '@/components/finance/GoogleSheets';
+import AnnualPnL from '@/components/finance/AnnualPnL';
+import Traffic from '@/components/finance/Traffic';
 import { Period, periodLabels, buildPnL, forecast } from '@/components/finance/data';
 import { PnLPoint } from '@/components/finance/PnLChart';
 import { useFinance, formatMoney, Operation } from '@/components/finance/store';
@@ -20,12 +22,13 @@ interface ViewProps {
   margin: string;
 }
 
-type Tab = 'dashboard' | 'pnl' | 'cashflow' | 'integrations' | 'settings';
+type Tab = 'dashboard' | 'pnl' | 'cashflow' | 'traffic' | 'integrations' | 'settings';
 
 const nav: { id: Tab; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Дашборд', icon: 'LayoutDashboard' },
   { id: 'pnl', label: 'P&L отчёт', icon: 'TrendingUp' },
   { id: 'cashflow', label: 'Денежный поток', icon: 'CalendarClock' },
+  { id: 'traffic', label: 'Трафик', icon: 'Radar' },
   { id: 'integrations', label: 'Интеграции', icon: 'Plug' },
   { id: 'settings', label: 'Настройки', icon: 'Settings2' },
 ];
@@ -113,6 +116,7 @@ const Index = () => {
               )}
               {tab === 'pnl' && <PnL {...{ period, setPeriod, data, profit, margin, totalIncome, totalExpense }} />}
               {tab === 'cashflow' && <Cashflow />}
+              {tab === 'traffic' && <Traffic />}
               {tab === 'integrations' && <Integrations />}
               {tab === 'settings' && <Settings />}
             </>
@@ -230,6 +234,8 @@ const PnL = ({ period, setPeriod, data, profit, margin, totalIncome, totalExpens
       <div className="rounded-2xl border border-border bg-card p-6">
         {data.length ? <PnLChart data={data} /> : <Empty />}
       </div>
+
+      <AnnualPnL />
 
       <div className="grid lg:grid-cols-2 gap-6">
         <div className="rounded-2xl border border-border bg-card overflow-hidden">

@@ -1,0 +1,18 @@
+{
+  "tests": [
+    {
+      "name": "Получить годовую аналитику",
+      "method": "GET",
+      "path": "/?year=2026",
+      "expectedStatus": 200,
+      "bodyMatcher": "none"
+    },
+    {
+      "name": "CORS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200,
+      "bodyMatcher": "none"
+    }
+  ]
+}
